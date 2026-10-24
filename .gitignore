@@ -1,0 +1,5 @@
+/klink-server
+/klink-panel
+*.db
+*.db-wal
+*.db-shm
