@@ -236,3 +236,26 @@ func TestPendingHandshakesLimitedPerSource(t *testing.T) {
 	defer f.manager.mu.RUnlock()
 	t.Fatalf("pending handshakes from one source: %d (limit %d)", len(f.manager.pending), maxPendingPerIP)
 }
+
+// The Android client validates a path by sending ping (05) and waiting for an
+// encrypted pong (06) on the same path.
+func TestPingIsAnsweredWithPong(t *testing.T) {
+	f := newUDPFixture(t, 0)
+	h := f.handshake(t)
+	h.client.write(t, dataPacket(t, h, "\x05"))
+	raw := h.client.read(t)
+	if len(raw) <= DataOffset || raw[1] != msgData || !bytes.Equal(raw[2:18], h.sid[:]) {
+		t.Fatalf("no data reply to ping: %x", raw)
+	}
+	_, k2, _ := kcrypto.ChannelKeys(h.binding)
+	in, _ := kcrypto.NewChannel(k2)
+	plain, _, _, err := in.Open(raw[DataOffset:])
+	if err != nil || !bytes.Equal(plain, []byte{6}) {
+		t.Fatalf("expected pong, got %x %v", plain, err)
+	}
+	select {
+	case b := <-f.received:
+		t.Fatalf("ping leaked to mux: %x", b)
+	case <-time.After(100 * time.Millisecond):
+	}
+}

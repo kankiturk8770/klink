@@ -17,6 +17,9 @@
 - لینک اشتراک با توکن ۲۵۶بیتی و JSON شامل کلیدها و endpointها.
 - پنل فارسی RTL با Tailwind CSS، آمار آنلاین، پورت‌ها و مدیریت کامل کاربران.
 - SQLite با WAL، بدون CGO، systemd و UFW.
+- کلاینت Android با `VpnService` و TUN واقعی، هسته‌ی gomobile، عبور TCP/UDP و ذخیره‌ی اشتراک با Android Keystore.
+
+راهنمای نصب، معماری و ساخت کلاینت در [`docs/ANDROID.md`](docs/ANDROID.md) آمده است.
 
 ## ساختار پروژه
 

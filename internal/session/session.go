@@ -608,7 +608,15 @@ func (s *Session) accept(ep endpoint, sealed []byte, wireBytes int) error {
 		return errSilent
 	}
 	s.rxBytes.Add(int64(wireBytes))
-	if len(plaintext) == 0 || plaintext[0] == 0 { // authenticated keepalive
+	if len(plaintext) == 0 {
+		return nil
+	}
+	switch plaintext[0] {
+	case 0: // authenticated keepalive
+		return nil
+	case 5: // authenticated path probe: pong proves bidirectional connectivity
+		return s.Send([]byte{6})
+	case 6: // a peer pong has no server-side handler
 		return nil
 	}
 	s.mu.RLock()

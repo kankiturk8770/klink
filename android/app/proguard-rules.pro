@@ -1,0 +1,3 @@
+-keep class go.** { *; }
+-keep class com.kankipro.klink.mobile.** { *; }
+-keepclassmembers class * { native <methods>; }

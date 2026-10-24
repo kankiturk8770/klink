@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">KLINK</string>
+    <string name="add_subscription">افزودن لینک اشتراک</string>
+    <string name="notification_title">KLINK فعال است</string>
+    <string name="notification_text">ترافیک دستگاه از نشست رمزنگاری‌شده عبور می‌کند</string>
+    <string name="notification_stop">قطع اتصال</string>
+    <string name="vpn_channel">وضعیت VPN</string>
+</resources>
