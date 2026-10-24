@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -163,6 +167,14 @@ func main() {
 	}
 	defer db.Close()
 	app := newApp(cfg, db, log)
+	if cfg.ACMEDomain == "" && cfg.TLSCertFile != "" {
+		pin, err := selfSignedPin(cfg.TLSCertFile)
+		if err != nil {
+			log.Error("TLS certificate", "error", err)
+			os.Exit(1)
+		}
+		app.certPin = pin
+	}
 	server := &http.Server{Addr: cfg.Listen, Handler: app.routes(), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 		MaxHeaderBytes: 32 << 10}
@@ -243,4 +255,26 @@ func httpsRedirect(cfg Config) http.Handler {
 
 func newACMEClient(directoryURL string) *acme.Client {
 	return &acme.Client{DirectoryURL: directoryURL}
+}
+
+// selfSignedPin اگر گواهی self-signed باشد اثر انگشت SHA-256 آن را (base64url)
+// برمی‌گرداند؛ برای گواهی صادرشده توسط CA رشته‌ی خالی.
+func selfSignedPin(certFile string) (string, error) {
+	data, err := os.ReadFile(certFile)
+	if err != nil {
+		return "", err
+	}
+	block, _ := pem.Decode(data)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return "", errors.New("no PEM certificate in " + certFile)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return "", err
+	}
+	if cert.CheckSignatureFrom(cert) != nil {
+		return "", nil
+	}
+	sum := sha256.Sum256(cert.Raw)
+	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
 }

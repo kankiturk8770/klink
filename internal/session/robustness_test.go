@@ -259,3 +259,21 @@ func TestPingIsAnsweredWithPong(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+// The client sends 07 when the user disconnects, so a reconnect is not
+// refused by device_limit=1.
+func TestGoodbyeFreesDeviceSlot(t *testing.T) {
+	f := newUDPFixture(t, 1)
+	first := f.handshake(t)
+	first.client.write(t, dataPacket(t, first, "\x07"))
+	deadline := time.Now().Add(2 * time.Second)
+	for f.manager.Snapshot().OnlineSessions != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("goodbye did not close the session")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	second := f.handshake(t)
+	second.client.write(t, dataPacket(t, second, "after"))
+	expect(t, f.received, "after")
+}

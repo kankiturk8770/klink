@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -144,5 +149,50 @@ func TestConfigTLSValidation(t *testing.T) {
 	}
 	if _, err := loadConfig(write(`{` + base + `,"tls_cert_file":"/x.crt"}`)); err == nil {
 		t.Fatal("certificate without key accepted")
+	}
+}
+
+func TestSubscriptionLinkPinAndTransportOrder(t *testing.T) {
+	a, server := newTestApp(t)
+	a.cfg.PublicURL = server.URL
+	a.cfg.TCPEndpoint = "vpn.example.com:443"
+	a.certPin = "abc_DEF-123"
+	if got := a.subscriptionURL("tok"); got != server.URL+"/sub/tok#pin=abc_DEF-123" {
+		t.Fatalf("subscription URL %q", got)
+	}
+	u := &store.User{Name: "order", PublicKey: "pk-order", PrivateKey: "priv", Token: strings.Repeat("a", 43), Enabled: true}
+	if err := a.db.CreateUser(t.Context(), u); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(server.URL + "/sub/" + u.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var sub struct {
+		Transports []map[string]string `json:"transports"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&sub); err != nil {
+		t.Fatal(err)
+	}
+	if len(sub.Transports) != 2 || sub.Transports[0]["network"] != "tcp" || sub.Transports[1]["network"] != "udp" {
+		t.Fatalf("transports must list TCP first: %+v", sub.Transports)
+	}
+}
+
+func TestSelfSignedPin(t *testing.T) {
+	srv := httptest.NewTLSServer(http.NotFoundHandler())
+	defer srv.Close()
+	p := filepath.Join(t.TempDir(), "panel.crt")
+	if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pin, err := selfSignedPin(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(srv.Certificate().Raw)
+	if pin != base64.RawURLEncoding.EncodeToString(sum[:]) {
+		t.Fatalf("pin %q", pin)
 	}
 }

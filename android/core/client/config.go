@@ -3,6 +3,9 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -10,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -112,7 +116,16 @@ func FetchSubscription(ctx context.Context, input string) (string, error) {
 		if !strings.HasPrefix(input, "https://") && !strings.HasPrefix(input, "http://") {
 			return "", errors.New("لینک باید با https:// یا http:// شروع شود")
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, input, nil)
+		u, err := url.Parse(input)
+		if err != nil {
+			return "", errors.New("آدرس اشتراک معتبر نیست")
+		}
+		pin, err := subscriptionPin(u.Fragment)
+		if err != nil {
+			return "", err
+		}
+		u.Fragment, u.RawFragment = "", ""
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 		if err != nil {
 			return "", errors.New("آدرس اشتراک معتبر نیست")
 		}
@@ -124,6 +137,9 @@ func FetchSubscription(ctx context.Context, input string) (string, error) {
 			}
 			return nil
 		}}
+		if pin != nil {
+			client.Transport = pinnedTransport(pin)
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			return "", fmt.Errorf("دریافت اشتراک ناموفق بود: %w", err)
@@ -145,4 +161,44 @@ func FetchSubscription(ctx context.Context, input string) (string, error) {
 		return "", err
 	}
 	return cfg.CanonicalJSON()
+}
+
+// subscriptionPin اثر انگشت گواهی را از fragment لینک (#pin=...) می‌خواند. پنلی
+// که دامنه ندارد با گواهی self-signed کار می‌کند و این اثر انگشت را در لینک
+// می‌گذارد؛ fragment به سرور فرستاده نمی‌شود.
+func subscriptionPin(fragment string) ([]byte, error) {
+	if fragment == "" {
+		return nil, nil
+	}
+	values, err := url.ParseQuery(fragment)
+	if err != nil || values.Get("pin") == "" {
+		return nil, nil
+	}
+	pin, err := base64.RawURLEncoding.DecodeString(values.Get("pin"))
+	if err != nil || len(pin) != sha256.Size {
+		return nil, errors.New("اثر انگشت گواهی در لینک معتبر نیست")
+	}
+	return pin, nil
+}
+
+// pinnedTransport فقط گواهی‌ای را می‌پذیرد که SHA-256 آن دقیقاً برابر pin باشد.
+// زنجیره‌ی CA بررسی نمی‌شود چون گواهی self-signed است، ولی هیچ گواهی دیگری
+// (حتی معتبر از نظر CA) پذیرفته نمی‌شود؛ بنابراین امنیت از حالت عادی کمتر نیست.
+func pinnedTransport(pin []byte) *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, // verification is done by VerifyConnection below
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return errors.New("server sent no certificate")
+			}
+			sum := sha256.Sum256(cs.PeerCertificates[0].Raw)
+			if subtle.ConstantTimeCompare(sum[:], pin) != 1 {
+				return errors.New("گواهی سرور با اثر انگشت لینک اشتراک یکی نیست")
+			}
+			return nil
+		},
+	}
+	return t
 }

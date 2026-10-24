@@ -51,6 +51,11 @@ type app struct {
 	log  *slog.Logger
 	http *http.Client
 
+	// certPin اثر انگشت SHA-256 گواهی self-signed پنل است. به انتهای لینک اشتراک
+	// (#pin=...) اضافه می‌شود تا برنامه‌ی کلاینت بدون دامنه هم فقط همین گواهی را
+	// بپذیرد. fragment هرگز به سرور فرستاده نمی‌شود.
+	certPin string
+
 	mu       sync.Mutex
 	sessions map[string]adminSession
 	failures map[string]*loginFailures
@@ -370,7 +375,15 @@ func (a *app) view(u *store.User) userView {
 		VolumeLimit: u.VolumeLimit, VolumeLimitGB: float64(u.VolumeLimit) / (1 << 30),
 		UsedBytes: u.UsedBytes, RemainingBytes: remaining, ExpiresAt: u.ExpiresAt,
 		DeviceLimit: u.DeviceLimit, CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt,
-		SubscriptionURL: strings.TrimRight(a.cfg.PublicURL, "/") + "/sub/" + u.Token}
+		SubscriptionURL: a.subscriptionURL(u.Token)}
+}
+
+func (a *app) subscriptionURL(token string) string {
+	link := strings.TrimRight(a.cfg.PublicURL, "/") + "/sub/" + token
+	if a.certPin != "" {
+		link += "#pin=" + a.certPin
+	}
+	return link
 }
 
 func (a *app) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -567,12 +580,15 @@ func (a *app) subscription(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "subscription not found")
 		return
 	}
+	// TCP اول می‌آید: کلاینت اولین مسیر را انتخاب می‌کند و mux روی UDP تحویل
+	// مطمئن ندارد؛ گم‌شدن یک بسته‌ی UDP جریان TCP داخل تونل را خراب می‌کرد.
+	// UDP همچنان مسیر جایگزین است.
 	transports := make([]map[string]string, 0, 2)
-	if a.cfg.UDPEndpoint != "" {
-		transports = append(transports, map[string]string{"network": "udp", "endpoint": a.cfg.UDPEndpoint})
-	}
 	if a.cfg.TCPEndpoint != "" {
 		transports = append(transports, map[string]string{"network": "tcp", "endpoint": a.cfg.TCPEndpoint})
+	}
+	if a.cfg.UDPEndpoint != "" {
+		transports = append(transports, map[string]string{"network": "udp", "endpoint": a.cfg.UDPEndpoint})
 	}
 	response := map[string]any{
 		"klink_version": 1, "name": u.Name,

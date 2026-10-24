@@ -49,8 +49,8 @@ const (
 // متغیر هستند تا تست‌ها بتوانند کوتاهشان کنند.
 var (
 	// staleSessionAge: نشستی که این مدت هیچ بسته‌ی معتبری نفرستاده، هنگام رسیدن
-	// اتصال تازه‌ی همان کاربر جای خود را می‌دهد (کلاینت keepalive هر ۳۰ تا ۶۰ ثانیه دارد).
-	staleSessionAge = 2 * time.Minute
+	// اتصال تازه‌ی همان کاربر جای خود را می‌دهد (کلاینت Android هر ۱۵ ثانیه ping می‌فرستد).
+	staleSessionAge = 45 * time.Second
 	// unusedSessionAge: نشستی که پس از handshake هرگز داده‌ای نفرستاده (مثلاً ACK
 	// آن گم شده و کلاینت handshake تازه زده) پس از این مدت قابل جایگزینی است.
 	unusedSessionAge = 15 * time.Second
@@ -617,6 +617,9 @@ func (s *Session) accept(ep endpoint, sealed []byte, wireBytes int) error {
 	case 5: // authenticated path probe: pong proves bidirectional connectivity
 		return s.Send([]byte{6})
 	case 6: // a peer pong has no server-side handler
+		return nil
+	case 7: // authenticated goodbye: the client closed this session on purpose
+		s.manager.CloseSession(s)
 		return nil
 	}
 	s.mu.RLock()

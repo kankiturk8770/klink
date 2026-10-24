@@ -5,9 +5,36 @@ if [[ ${EUID} -ne 0 ]]; then
   echo "Run as root: sudo bash install.sh" >&2
   exit 1
 fi
-if [[ ! -f go.mod || ! -d cmd/server || ! -d cmd/panel ]]; then
-  echo "Run this script from the KLINK project root." >&2
-  exit 1
+
+# One-line install:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/kankiturk8770/klink/main/install.sh)
+# When the script is not started from a KLINK release or source directory, it
+# downloads the latest GitHub release (prebuilt binaries, no Go needed) and runs
+# the installer from there. Without a release it falls back to the source code.
+KLINK_REPO="${KLINK_REPO:-kankiturk8770/klink}"
+if [[ ! -x bin/klink-server && ! ( -f go.mod && -d cmd/server && -d cmd/panel ) ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+  command -v curl >/dev/null && command -v tar >/dev/null || { apt-get update && apt-get install -y curl tar gzip ca-certificates; }
+  case "$(uname -m)" in
+    x86_64|amd64) REL_ARCH=amd64 ;;
+    aarch64|arm64) REL_ARCH=arm64 ;;
+    *) REL_ARCH="" ;;
+  esac
+  WORK="/opt/klink/setup"
+  rm -rf "$WORK"
+  install -d -m 0755 "$WORK"
+  archive="$(mktemp /tmp/klink.XXXXXX.tar.gz)"
+  if [[ -n "$REL_ARCH" ]] && curl -fsSL --retry 3 -o "$archive" \
+      "https://github.com/${KLINK_REPO}/releases/latest/download/klink-linux-${REL_ARCH}.tar.gz"; then
+    echo "Downloaded the latest KLINK release (linux-${REL_ARCH})."
+  else
+    echo "No release package found; downloading the source code (Go will be installed to build it)."
+    curl -fsSL --retry 3 -o "$archive" "https://github.com/${KLINK_REPO}/archive/refs/heads/main.tar.gz"
+  fi
+  tar -C "$WORK" --strip-components=1 -xzf "$archive"
+  rm -f "$archive"
+  cd "$WORK"
+  exec bash ./install.sh "$@"
 fi
 
 PROJECT_DIR="$(pwd -P)"
@@ -40,6 +67,21 @@ done
 (( PANEL_PORT != PROXY_PORT )) || { echo "PANEL_PORT must differ from PROXY_PORT" >&2; exit 1; }
 (( PANEL_PORT != 80 )) || { echo "PANEL_PORT 80 is reserved for the Let's Encrypt challenge" >&2; exit 1; }
 
+# Questions are read from the terminal even when the script itself arrives
+# through a pipe (curl ... | bash).
+TTY=""
+if [[ "${NONINTERACTIVE:-0}" != "1" ]] && { : </dev/tty; } 2>/dev/null; then TTY=/dev/tty; fi
+ask() { # ask <prompt> -> REPLY
+  REPLY=""
+  [[ -n "$TTY" ]] || return 1
+  printf '%s' "$1" >"$TTY"
+  IFS= read -r REPLY <"$TTY" || return 1
+}
+ask_yes() { # ask_yes <prompt>; default no
+  ask "$1 [y/N]: " || return 1
+  [[ "${REPLY,,}" =~ ^(y|yes|بله|آره)$ ]]
+}
+
 is_ipv4() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; }
 is_domain() { [[ "$1" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$ ]]; }
 
@@ -47,31 +89,36 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y ca-certificates curl tar gzip ufw openssl iproute2 jq
 
-# Install the current stable Go toolchain unless GO_VERSION (for example
-# GO_VERSION=go1.26.0) was explicitly supplied.
-if [[ -z "$GO_VERSION" ]]; then
-  GO_VERSION="$(curl -fsSL https://go.dev/VERSION?m=text | head -n 1)"
-fi
-[[ "$GO_VERSION" =~ ^go[0-9]+\.[0-9]+([.][0-9]+)?$ ]] || { echo "Could not determine Go version" >&2; exit 1; }
-case "$(dpkg --print-architecture)" in
-  amd64) GO_ARCH=amd64 ;;
-  arm64) GO_ARCH=arm64 ;;
-  armhf) GO_ARCH=armv6l ;;
-  *) echo "Unsupported CPU architecture" >&2; exit 1 ;;
-esac
-GO_ARCHIVE="$(mktemp /tmp/go.XXXXXX.tar.gz)"
-curl -fL --retry 3 -o "$GO_ARCHIVE" "https://go.dev/dl/${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
-rm -rf /usr/local/go
-tar -C /usr/local -xzf "$GO_ARCHIVE"
-rm -f "$GO_ARCHIVE"
-export PATH="/usr/local/go/bin:$PATH"
-
-go version
-go mod download
-go test ./...
 install -d -m 0755 /usr/local/bin /usr/share/klink/web /etc/klink
-CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/local/bin/klink-server.new ./cmd/server
-CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/local/bin/klink-panel.new ./cmd/panel
+if [[ -x bin/klink-server && -x bin/klink-panel ]]; then
+  # Release package: binaries were built and tested by GitHub Actions.
+  install -m 0755 bin/klink-server /usr/local/bin/klink-server.new
+  install -m 0755 bin/klink-panel /usr/local/bin/klink-panel.new
+else
+  # Source package: install the current stable Go toolchain unless GO_VERSION
+  # (for example GO_VERSION=go1.26.0) was explicitly supplied.
+  if [[ -z "$GO_VERSION" ]]; then
+    GO_VERSION="$(curl -fsSL https://go.dev/VERSION?m=text | head -n 1)"
+  fi
+  [[ "$GO_VERSION" =~ ^go[0-9]+\.[0-9]+([.][0-9]+)?$ ]] || { echo "Could not determine Go version" >&2; exit 1; }
+  case "$(dpkg --print-architecture)" in
+    amd64) GO_ARCH=amd64 ;;
+    arm64) GO_ARCH=arm64 ;;
+    armhf) GO_ARCH=armv6l ;;
+    *) echo "Unsupported CPU architecture" >&2; exit 1 ;;
+  esac
+  GO_ARCHIVE="$(mktemp /tmp/go.XXXXXX.tar.gz)"
+  curl -fL --retry 3 -o "$GO_ARCHIVE" "https://go.dev/dl/${GO_VERSION}.linux-${GO_ARCH}.tar.gz"
+  rm -rf /usr/local/go
+  tar -C /usr/local -xzf "$GO_ARCHIVE"
+  rm -f "$GO_ARCHIVE"
+  export PATH="/usr/local/go/bin:$PATH"
+  go version
+  go mod download
+  go test ./...
+  CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/local/bin/klink-server.new ./cmd/server
+  CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/local/bin/klink-panel.new ./cmd/panel
+fi
 mv -f /usr/local/bin/klink-server.new /usr/local/bin/klink-server
 mv -f /usr/local/bin/klink-panel.new /usr/local/bin/klink-panel
 cp -a web/. /usr/share/klink/web/
@@ -87,9 +134,6 @@ PUBLIC_IPV4="$(curl -4 -fsS --max-time 6 https://api.ipify.org 2>/dev/null || cu
 is_ipv4 "$PUBLIC_IPV4" || PUBLIC_IPV4="$LOCAL_IPV4"
 
 if [[ -z "$DOMAIN" ]] && is_domain "$PUBLIC_HOST"; then DOMAIN="$PUBLIC_HOST"; fi
-if [[ -z "$DOMAIN" && "$SSL_MODE" =~ ^(auto|acme)$ && ! -f /etc/klink/panel.json && -t 0 ]]; then
-  read -r -p "Domain pointing to this server, for the panel SSL certificate (leave empty if none): " DOMAIN || true
-fi
 DOMAIN="${DOMAIN,,}"
 DOMAIN="${DOMAIN%.}"
 if [[ -n "$DOMAIN" ]] && ! is_domain "$DOMAIN"; then echo "Invalid DOMAIN: $DOMAIN" >&2; exit 1; fi
@@ -99,7 +143,7 @@ if [[ -n "$DOMAIN" ]] && ! is_domain "$DOMAIN"; then echo "Invalid DOMAIN: $DOMA
 # would fail and rate-limit the domain.
 dns_points_here() {
   local resolved
-  resolved="$(getent ahostsv4 "$1" 2>/dev/null | awk '{print $1}' | sort -u)"
+  resolved="$(getent ahostsv4 "$1" 2>/dev/null | awk '{print $1}' | sort -u || true)"
   [[ -n "$resolved" ]] || return 1
   grep -qxF "$PUBLIC_IPV4" <<<"$resolved" && return 0
   [[ -n "$LOCAL_IPV4" ]] && grep -qxF "$LOCAL_IPV4" <<<"$resolved"
@@ -109,6 +153,43 @@ port80_busy_by_other() {
   owner="$(ss -Hltnp 'sport = :80' 2>/dev/null || true)"
   [[ -n "$owner" ]] && ! grep -q '"klink-panel"' <<<"$owner"
 }
+
+# Ask on a fresh install, or on an existing install that still serves HTTP.
+NEEDS_SSL_QUESTION=0
+if [[ ! -f /etc/klink/panel.json ]]; then
+  NEEDS_SSL_QUESTION=1
+elif [[ "$(jq -r 'if (.acme_domain // "") != "" or (.tls_cert_file // "") != "" then "tls" else "http" end' /etc/klink/panel.json 2>/dev/null)" == "http" ]]; then
+  NEEDS_SSL_QUESTION=1
+fi
+if [[ -z "$DOMAIN" && "$SSL_MODE" =~ ^(auto|acme)$ && "$NEEDS_SSL_QUESTION" == "1" && -n "$TTY" ]]; then
+  echo
+  echo "Your server IP: ${PUBLIC_IPV4:-unknown}"
+  if ask_yes "Do you have a domain (A record) pointing to this server? / دامنه دارید؟"; then
+    while true; do
+      ask "Enter the domain, e.g. vpn.example.com / دامنه را وارد کنید: " || break
+      candidate="${REPLY,,}"
+      candidate="${candidate%.}"
+      candidate="${candidate// /}"
+      if ! is_domain "$candidate"; then
+        echo "  '${candidate}' is not a valid domain name." >"$TTY"
+        continue
+      fi
+      if dns_points_here "$candidate"; then
+        echo "  OK: ${candidate} points to this server." >"$TTY"
+        DOMAIN="$candidate"
+        break
+      fi
+      resolved="$(getent ahostsv4 "$candidate" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' || true)"
+      echo "  ${candidate} resolves to: ${resolved:-nothing}; this server is ${PUBLIC_IPV4:-unknown}." >"$TTY"
+      echo "  Set the A record to this IP (CDN/proxy off) and wait a few minutes." >"$TTY"
+      if ask_yes "  Try again? (No = continue without a domain, self-signed SSL)"; then continue; fi
+      break
+    done
+  fi
+  if [[ -n "$DOMAIN" ]] && ask "E-mail for Let's Encrypt notices (optional, Enter to skip): " && [[ -n "$REPLY" ]]; then
+    if [[ "$REPLY" =~ ^[^@[:space:]\"\\]+@[^@[:space:]\"\\]+\.[^@[:space:]\"\\]+$ ]]; then ACME_EMAIL="$REPLY"; fi
+  fi
+fi
 
 EFFECTIVE_SSL="off"
 case "$SSL_MODE" in
@@ -135,6 +216,13 @@ echo "Panel TLS mode: ${EFFECTIVE_SSL}${DOMAIN:+ (domain ${DOMAIN})}"
 
 make_selfsigned() {
   local name="$1" san
+  # Keep an existing certificate for the same name: its fingerprint is part of
+  # every subscription link the app already imported.
+  if [[ -f /etc/klink/panel.crt && -f /etc/klink/panel.key ]] \
+      && openssl x509 -in /etc/klink/panel.crt -noout -checkend 2592000 >/dev/null 2>&1 \
+      && openssl x509 -in /etc/klink/panel.crt -noout -ext subjectAltName 2>/dev/null | grep -qF "$name"; then
+    return 0
+  fi
   if is_ipv4 "$name"; then san="IP:${name}"; else san="DNS:${name}"; fi
   if [[ -n "$PUBLIC_IPV4" && "$name" != "$PUBLIC_IPV4" ]]; then san="${san},IP:${PUBLIC_IPV4}"; fi
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -sha256 -days 825 \

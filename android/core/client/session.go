@@ -26,6 +26,9 @@ const (
 	wireKeepalive = 0
 	wirePing      = 5
 	wirePong      = 6
+	// wireClose به سرور می‌گوید این نشست عمداً بسته شد تا سهمیه‌ی دستگاه فوراً
+	// آزاد شود و اتصال دوباره‌ی همان گوشی رد نشود.
+	wireClose = 7
 )
 
 const (
@@ -581,6 +584,10 @@ func (s *Session) rehandshake() error {
 }
 
 func (s *Session) Close() {
+	if t := s.currentTransport(); t != nil {
+		// Best effort: a lost goodbye only means the server frees the slot later.
+		_ = s.sendOn(t, []byte{wireClose}, false)
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
