@@ -316,15 +316,15 @@ func attachPassiveHostFilter(fd int, connectIP string, cooked bool) error {
 	if cooked {
 		// Packets start at the IPv4 header (SOCK_DGRAM, ETH_P_IP).
 		filter := []syscall.SockFilter{
-			{Code: 0x30, K: 0},             // ldb [0] version/IHL
-			{Code: 0x54, K: 0xf0},          // and #0xf0
-			{Code: 0x15, Jf: 7, K: 0x40},   // IPv4
-			{Code: 0x30, K: 9},             // ldb [9] protocol
-			{Code: 0x15, Jf: 5, K: 6},      // TCP
-			{Code: 0x20, K: 12},            // ldw [12] src
-			{Code: 0x15, Jt: 2, K: host},   // src == host
-			{Code: 0x20, K: 16},            // ldw [16] dst
-			{Code: 0x15, Jf: 1, K: host},   // dst == host
+			{Code: 0x30, K: 0},           // ldb [0] version/IHL
+			{Code: 0x54, K: 0xf0},        // and #0xf0
+			{Code: 0x15, Jf: 7, K: 0x40}, // IPv4
+			{Code: 0x30, K: 9},           // ldb [9] protocol
+			{Code: 0x15, Jf: 5, K: 6},    // TCP
+			{Code: 0x20, K: 12},          // ldw [12] src
+			{Code: 0x15, Jt: 2, K: host}, // src == host
+			{Code: 0x20, K: 16},          // ldw [16] dst
+			{Code: 0x15, Jf: 1, K: host}, // dst == host
 			{Code: 0x06, K: accept},
 			{Code: 0x06, K: 0},
 		}

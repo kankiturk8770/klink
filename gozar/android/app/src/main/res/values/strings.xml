@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Gozar</string>
+    <string name="tagline">DPI bypass · SNI spoofing</string>
+
+    <string name="tab_home">Home</string>
+    <string name="tab_profiles">Profiles</string>
+    <string name="tab_settings">Settings</string>
+    <string name="tab_logs">Logs</string>
+
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="connecting">Connecting…</string>
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="state_error">Error</string>
+
+    <string name="no_profiles">No profiles yet. Add one with the + button.</string>
+    <string name="add_profile">Add profile</string>
+    <string name="import_clipboard">Paste from clipboard</string>
+    <string name="import_qr">Scan QR code</string>
+    <string name="import_manual">Enter link manually</string>
+    <string name="import_subscription">Import subscription</string>
+    <string name="paste_link_hint">vless:// vmess:// trojan:// ss:// or JSON</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="set_active">Set active</string>
+    <string name="active">Active</string>
+    <string name="test_latency">Test latency</string>
+    <string name="invalid_link">Invalid link</string>
+    <string name="profile_added">Profile added</string>
+
+    <string name="section_spoof">DPI bypass</string>
+    <string name="section_advanced">Advanced spoofing</string>
+    <string name="section_network">Network</string>
+    <string name="section_app">Application</string>
+
+    <string name="spoof_enabled">Enable SNI spoofing</string>
+    <string name="spoof_enabled_sub">Inject a decoy ClientHello before the real handshake</string>
+    <string name="mode">Bypass mode</string>
+    <string name="mode_non_root">Non-root (fragment / TTL fake)</string>
+    <string name="mode_root_active">Root — active (NFQUEUE)</string>
+    <string name="mode_root_passive">Root — passive (AF_PACKET)</string>
+    <string name="mode_root_raw">Root — raw (rmnet)</string>
+    <string name="root_required">This mode needs root; grant su access.</string>
+    <string name="root_ok">Root access granted</string>
+
+    <string name="fake_sni">Fake SNI (decoy)</string>
+    <string name="fake_sni_hint">e.g. www.cloudflare.com (leave empty for default)</string>
+    <string name="utls">TLS fingerprint (uTLS)</string>
+    <string name="fake_repeat">Fake ClientHello repeats</string>
+    <string name="fake_delay">Fake delay (ms)</string>
+    <string name="ack_timeout">ACK timeout (ms)</string>
+    <string name="enable_fragment">Fragment real ClientHello</string>
+    <string name="fragment_delay">Fragment delay (ms)</string>
+    <string name="sni_chunk">SNI bytes per chunk</string>
+    <string name="fake_ttl">Fake TTL (non-root)</string>
+    <string name="fake_hold">Fake hold (ms)</string>
+    <string name="tls_record_split">Split TLS record at SNI</string>
+    <string name="disorder">Disorder (low-TTL first segment)</string>
+    <string name="disorder_ttl">Disorder TTL</string>
+    <string name="oob">Out-of-band byte</string>
+    <string name="connect_timeout">Connect timeout (ms)</string>
+
+    <string name="dns">DNS resolver</string>
+    <string name="log_level">Log level</string>
+    <string name="sniffing">Domain sniffing</string>
+    <string name="bypass_lan">Bypass LAN / private ranges</string>
+    <string name="auto_connect_boot">Auto-connect on boot</string>
+
+    <string name="clear_logs">Clear</string>
+    <string name="copy_logs">Copy</string>
+    <string name="share_logs">Share</string>
+    <string name="logs_empty">No logs yet.</string>
+
+    <string name="stat_up">Upload</string>
+    <string name="stat_down">Download</string>
+    <string name="stat_conns">Connections</string>
+    <string name="stat_fake">Fake injected</string>
+
+    <string name="notif_channel">Gozar VPN</string>
+    <string name="notif_connected">Tunnel active · %1$s</string>
+    <string name="notif_connecting">Starting tunnel…</string>
+    <string name="vpn_permission_needed">VPN permission is required to run the tunnel.</string>
+    <string name="select_profile_first">Add and select a profile first.</string>
+</resources>

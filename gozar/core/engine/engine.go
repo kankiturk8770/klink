@@ -203,6 +203,9 @@ func (e *Engine) Start(s Settings, protect func(fd uintptr)) error {
 		e.spoofPort = dialPort
 		e.logs.addf("spoof: listening on 127.0.0.1:%d -> %s:%d (fake SNI %s, mode %s)",
 			dialPort, connectIP, active.RealPort, spoofCfg.FakeSNI, s.Spoof.Mode)
+	} else if s.DialOverrideHost != "" && s.DialOverridePort != 0 {
+		dialHost, dialPort = s.DialOverrideHost, s.DialOverridePort
+		e.logs.addf("spoof: external helper at %s:%d (root mode)", dialHost, dialPort)
 	} else {
 		e.logs.add("spoof: disabled (direct dial)")
 	}

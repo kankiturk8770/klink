@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">گذر</string>
+    <string name="tagline">عبور از فیلترینگ · جعل SNI</string>
+
+    <string name="tab_home">خانه</string>
+    <string name="tab_profiles">کانفیگ‌ها</string>
+    <string name="tab_settings">تنظیمات</string>
+    <string name="tab_logs">گزارش</string>
+
+    <string name="connect">اتصال</string>
+    <string name="disconnect">قطع</string>
+    <string name="connecting">در حال اتصال…</string>
+    <string name="connected">متصل</string>
+    <string name="disconnected">قطع</string>
+    <string name="state_error">خطا</string>
+
+    <string name="no_profiles">هنوز کانفیگی ندارید. با دکمه + اضافه کنید.</string>
+    <string name="add_profile">افزودن کانفیگ</string>
+    <string name="import_clipboard">چسباندن از کلیپ‌بورد</string>
+    <string name="import_qr">اسکن کد QR</string>
+    <string name="import_manual">وارد کردن دستی لینک</string>
+    <string name="import_subscription">افزودن ساب‌سکریپشن</string>
+    <string name="paste_link_hint">vless:// vmess:// trojan:// ss:// یا JSON</string>
+    <string name="save">ذخیره</string>
+    <string name="cancel">انصراف</string>
+    <string name="delete">حذف</string>
+    <string name="set_active">انتخاب</string>
+    <string name="active">فعال</string>
+    <string name="test_latency">تست پینگ</string>
+    <string name="invalid_link">لینک نامعتبر</string>
+    <string name="profile_added">کانفیگ اضافه شد</string>
+
+    <string name="section_spoof">عبور از فیلترینگ</string>
+    <string name="section_advanced">تنظیمات پیشرفته جعل</string>
+    <string name="section_network">شبکه</string>
+    <string name="section_app">برنامه</string>
+
+    <string name="spoof_enabled">فعال‌سازی جعل SNI</string>
+    <string name="spoof_enabled_sub">تزریق ClientHello فریبنده پیش از هندشیک واقعی</string>
+    <string name="mode">حالت عبور</string>
+    <string name="mode_non_root">بدون روت (فرگمنت / فیک TTL)</string>
+    <string name="mode_root_active">روت — فعال (NFQUEUE)</string>
+    <string name="mode_root_passive">روت — غیرفعال (AF_PACKET)</string>
+    <string name="mode_root_raw">روت — خام (rmnet)</string>
+    <string name="root_required">این حالت به روت نیاز دارد؛ دسترسی su را بدهید.</string>
+    <string name="root_ok">دسترسی روت داده شد</string>
+
+    <string name="fake_sni">SNI فریبنده</string>
+    <string name="fake_sni_hint">مثلاً www.cloudflare.com (خالی = پیش‌فرض)</string>
+    <string name="utls">اثرانگشت TLS (uTLS)</string>
+    <string name="fake_repeat">تعداد تکرار ClientHello جعلی</string>
+    <string name="fake_delay">تأخیر جعل (میلی‌ثانیه)</string>
+    <string name="ack_timeout">مهلت ACK (میلی‌ثانیه)</string>
+    <string name="enable_fragment">تکه‌تکه کردن ClientHello واقعی</string>
+    <string name="fragment_delay">تأخیر فرگمنت (میلی‌ثانیه)</string>
+    <string name="sni_chunk">بایت SNI در هر تکه</string>
+    <string name="fake_ttl">TTL جعل (بدون روت)</string>
+    <string name="fake_hold">نگه‌داری جعل (میلی‌ثانیه)</string>
+    <string name="tls_record_split">شکستن رکورد TLS روی SNI</string>
+    <string name="disorder">بی‌نظمی (سگمنت اول با TTL پایین)</string>
+    <string name="disorder_ttl">TTL بی‌نظمی</string>
+    <string name="oob">بایت خارج از باند (OOB)</string>
+    <string name="connect_timeout">مهلت اتصال (میلی‌ثانیه)</string>
+
+    <string name="dns">DNS</string>
+    <string name="log_level">سطح گزارش</string>
+    <string name="sniffing">تشخیص دامنه</string>
+    <string name="bypass_lan">عبور از شبکه محلی/خصوصی</string>
+    <string name="auto_connect_boot">اتصال خودکار هنگام روشن شدن</string>
+
+    <string name="clear_logs">پاک کردن</string>
+    <string name="copy_logs">کپی</string>
+    <string name="share_logs">اشتراک</string>
+    <string name="logs_empty">هنوز گزارشی نیست.</string>
+
+    <string name="stat_up">آپلود</string>
+    <string name="stat_down">دانلود</string>
+    <string name="stat_conns">اتصال‌ها</string>
+    <string name="stat_fake">جعل تزریق‌شده</string>
+
+    <string name="notif_channel">وی‌پی‌ان گذر</string>
+    <string name="notif_connected">تونل فعال · %1$s</string>
+    <string name="notif_connecting">در حال شروع تونل…</string>
+    <string name="vpn_permission_needed">برای اجرای تونل اجازه‌ی VPN لازم است.</string>
+    <string name="select_profile_first">ابتدا یک کانفیگ اضافه و انتخاب کنید.</string>
+</resources>

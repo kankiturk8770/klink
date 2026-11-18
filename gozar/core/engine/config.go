@@ -33,6 +33,13 @@ type Settings struct {
 	LogLevel string
 	// EnableSniffing routes by sniffed domain and enables domain rules.
 	EnableSniffing bool
+
+	// DialOverrideHost/Port, when set, makes Xray dial this address instead of
+	// the real server or the in-process spoof listener. The root helper
+	// (gozar-helper) runs the privileged spoof proxy at this address, so set it
+	// together with Spoof.Enabled=false in root mode.
+	DialOverrideHost string
+	DialOverridePort int
 }
 
 // SpoofSettings mirrors proxy.Options but as a serialisable, UI-facing struct.

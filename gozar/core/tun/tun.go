@@ -59,8 +59,8 @@ func Start(tunFd, mtu, socksPort int, protect func(fd uintptr), logs func() stri
 	}
 
 	ep, err := fdbased.New(&fdbased.Options{
-		FDs:            []int{dup},
-		MTU:            uint32(mtu),
+		FDs: []int{dup},
+		MTU: uint32(mtu),
 		// Android TUN carries bare IP packets (no link header).
 		EthernetHeader: false,
 	})

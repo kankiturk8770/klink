@@ -67,3 +67,12 @@ func deriveFakeSNI(realSNI, realHost string) string {
 }
 
 func isIP(s string) bool { return net.ParseIP(s) != nil }
+
+// ResolveServerIPv4 resolves a profile link's server host to an IPv4 literal.
+// Exposed for the root-helper path (which needs a concrete IP). protect may be nil.
+func ResolveServerIPv4(host string, protect func(fd uintptr)) (string, error) {
+	return resolveIPv4(context.Background(), host, protect)
+}
+
+// DeriveFakeSNI is the exported decoy-SNI chooser used by the helper path.
+func DeriveFakeSNI(realSNI, realHost string) string { return deriveFakeSNI(realSNI, realHost) }

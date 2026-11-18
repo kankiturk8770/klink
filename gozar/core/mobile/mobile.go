@@ -196,3 +196,30 @@ func URLTest(url string, timeoutMS int) (int64, error) {
 	}
 	return e.URLTest(url, timeoutMS)
 }
+
+// ServerInfoJSON returns {"host","ip","port","sni","protocol","fakeSNI"} for the
+// first link, resolving the server to an IPv4. Used by the root-helper flow.
+func ServerInfoJSON(rawLink string) (string, error) {
+	p, err := link.Parse(rawLink)
+	if err != nil {
+		return "", err
+	}
+	var protectFn func(fd uintptr)
+	mu.Lock()
+	pr := protect
+	mu.Unlock()
+	if pr != nil {
+		protectFn = func(fd uintptr) { pr.Protect(int(fd)) }
+	}
+	ip, err := engine.ResolveServerIPv4(p.RealHost, protectFn)
+	if err != nil {
+		return "", err
+	}
+	out := map[string]any{
+		"host": p.RealHost, "ip": ip, "port": p.RealPort,
+		"sni": p.SNI, "protocol": p.Protocol,
+		"fakeSNI": engine.DeriveFakeSNI(p.SNI, p.RealHost),
+	}
+	b, _ := json.Marshal(out)
+	return string(b), nil
+}
