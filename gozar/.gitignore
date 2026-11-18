@@ -9,3 +9,4 @@ android/build/
 android/app/build/
 core/internal/gomobiletools/.keep
 *.apk
+android/.kotlin/
