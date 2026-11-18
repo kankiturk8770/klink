@@ -40,6 +40,12 @@ type Settings struct {
 	// together with Spoof.Enabled=false in root mode.
 	DialOverrideHost string
 	DialOverridePort int
+
+	// ServerIP, when set, is the already-resolved IPv4 of the active server.
+	// The Android app resolves the hostname through the phone's real network
+	// (system DNS) before the VPN comes up and passes it here, so the engine
+	// never depends on Go's resolver inside the VPN process.
+	ServerIP string
 }
 
 // SpoofSettings mirrors proxy.Options but as a serialisable, UI-facing struct.

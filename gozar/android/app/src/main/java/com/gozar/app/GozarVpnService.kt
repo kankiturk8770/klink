@@ -46,6 +46,7 @@ class GozarVpnService : VpnService() {
         val active = profiles.firstOrNull { it.id == settings.activeProfileId }
             ?: profiles.firstOrNull()
         if (active == null) {
+            GoBridge.log("ERROR: no profile selected")
             VpnController.setError("no active profile")
             stopSelf(); return
         }
@@ -57,15 +58,27 @@ class GozarVpnService : VpnService() {
             var helperHost = ""
             var helperPort = 0
 
+            GoBridge.log("connecting: ${active.remark} (mode ${settings.mode.wire})")
+            val info = runCatching { GoBridge.profileInfo(active.link) }.getOrElse {
+                throw IllegalStateException("invalid config: ${it.message}")
+            }
+            GoBridge.log("server ${info.host}:${info.port} ${info.protocol}/${info.network}/${info.security} sni=${info.sni}")
+
+            // Resolve the server through the phone's real network BEFORE the VPN
+            // exists (Android has no /etc/resolv.conf for Go's resolver).
+            val serverIp = resolveServer(info.host)
+            if (serverIp.isNotEmpty()) GoBridge.log("resolved ${info.host} -> $serverIp (system DNS)")
+            else GoBridge.log("WARN: system DNS could not resolve ${info.host}; engine will try public DNS")
+
             if (settings.mode.isRoot) {
-                val info = GoBridge.serverInfo(active.link)
                 val helper = RootHelper(applicationContext).also { rootHelper = it }
-                if (!helper.hasRoot()) throw IllegalStateException("root not available")
+                if (!helper.hasRoot()) throw IllegalStateException("root not available (su denied or missing)")
+                if (serverIp.isEmpty()) throw IllegalStateException("could not resolve ${info.host}")
                 val ifaceName = activeInterfaceName()
                 val req = RootHelper.Request(
-                    connectIP = info.ip,
+                    connectIP = serverIp,
                     connectPort = info.port,
-                    fakeSNI = settings.fakeSni.ifEmpty { info.fakeSNI },
+                    fakeSNI = settings.fakeSni.ifEmpty { "www.cloudflare.com" },
                     utls = settings.utls,
                     mode = settings.mode.wire.removePrefix("root-"),
                     interfaceName = ifaceName,
@@ -76,7 +89,7 @@ class GozarVpnService : VpnService() {
                     fragmentDelayMS = settings.fragmentDelayMs,
                     sniChunk = settings.sniChunk,
                 )
-                val addr = helper.start(req) { /* helper logs flow to logcat */ }
+                val addr = helper.start(req) { GoBridge.log(it) }
                 val idx = addr.lastIndexOf(':')
                 helperHost = addr.substring(0, idx).ifEmpty { "127.0.0.1" }
                 helperPort = addr.substring(idx + 1).toInt()
@@ -107,19 +120,40 @@ class GozarVpnService : VpnService() {
                 runCatching { builder.addDisallowedApplication(packageName) }
             }
 
-            val pfd = builder.establish() ?: throw IllegalStateException("VpnService.establish returned null")
+            val pfd = builder.establish()
+                ?: throw IllegalStateException("VPN permission revoked or another VPN is always-on")
             tun = pfd
+            GoBridge.log("VPN interface up")
 
-            val engineSettings = SettingsMapper.toEngine(settings, active.link, 0, helperHost, helperPort)
+            val engineSettings = SettingsMapper.toEngine(settings, active.link, 0, helperHost, helperPort, serverIp)
             GoBridge.start(engineSettings, pfd.fd, mtu)
 
+            GoBridge.log("connected")
             VpnController.setState(VpnState.CONNECTED)
             updateNotification(active.remark)
             startStatsLoop()
         } catch (t: Throwable) {
-            VpnController.setError(t.message ?: t.toString())
+            val msg = t.message ?: t.toString()
+            GoBridge.log("ERROR: $msg")
+            VpnController.setError(msg)
             stopTunnel()
         }
+    }
+
+    /** Resolves host to IPv4 via the active (physical) network's system DNS. "" on failure. */
+    private fun resolveServer(host: String): String {
+        if (host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))) return host
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val attempts = listOf<() -> Array<java.net.InetAddress>?>(
+            { cm.activeNetwork?.getAllByName(host) },
+            { java.net.InetAddress.getAllByName(host) },
+        )
+        for (a in attempts) {
+            val r = runCatching { a() }
+            r.exceptionOrNull()?.let { GoBridge.log("system DNS: ${it.javaClass.simpleName}: ${it.message}") }
+            r.getOrNull()?.firstOrNull { it is java.net.Inet4Address }?.hostAddress?.let { return it }
+        }
+        return ""
     }
 
     private fun startStatsLoop() {

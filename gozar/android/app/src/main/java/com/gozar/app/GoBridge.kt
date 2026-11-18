@@ -36,6 +36,15 @@ object GoBridge {
     /** Validate a single link; returns a human description or throws. */
     fun validateLink(raw: String): String = Mobile.validateLink(raw)
 
+    /** Parse a link without any network access. */
+    fun profileInfo(raw: String): ProfileInfo =
+        gson.fromJson(Mobile.profileInfoJSON(raw), ProfileInfo::class.java)
+
+    /** Write a line into the log shown in the Logs tab. */
+    fun log(line: String) = runCatching { Mobile.appendLog(line) }
+
+    fun clearLogs() = runCatching { Mobile.clearLogs() }
+
     /** Resolve the server endpoint for a link (used by the root-helper flow). */
     fun serverInfo(raw: String): ServerInfo =
         gson.fromJson(Mobile.serverInfoJSON(raw), ServerInfo::class.java)
@@ -70,6 +79,7 @@ object SettingsMapper {
         socksPort: Int,
         helperHost: String = "",
         helperPort: Int = 0,
+        serverIp: String = "",
     ): EngineSettings {
         val rootExternal = s.mode.isRoot && helperPort != 0
         return EngineSettings(
@@ -81,6 +91,7 @@ object SettingsMapper {
             enableSniffing = s.sniffing,
             dialOverrideHost = if (rootExternal) helperHost else "",
             dialOverridePort = if (rootExternal) helperPort else 0,
+            serverIp = serverIp,
         )
     }
 

@@ -31,6 +31,11 @@ class GozarViewModel(app: Application) : AndroidViewModel(app) {
     private val _logs = MutableStateFlow("")
     val logs: StateFlow<String> = _logs
 
+    fun clearLogs() {
+        GoBridge.clearLogs()
+        _logs.value = ""
+    }
+
     fun refreshLogs() {
         viewModelScope.launch { _logs.value = runCatching { GoBridge.logs() }.getOrDefault("") }
     }
@@ -40,8 +45,9 @@ class GozarViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val trimmed = raw.trim()
             val desc = withContext(Dispatchers.IO) { runCatching { GoBridge.validateLink(trimmed) } }
+            desc.exceptionOrNull()?.let { GoBridge.log("add config failed: ${it.message}") }
             desc.onSuccess { d ->
-                val info = withContext(Dispatchers.IO) { runCatching { GoBridge.serverInfo(trimmed) }.getOrNull() }
+                val info = withContext(Dispatchers.IO) { runCatching { GoBridge.profileInfo(trimmed) }.getOrNull() }
                 val p = Profile(
                     id = UUID.randomUUID().toString(),
                     remark = d.substringBefore(" ·").ifBlank { trimmed.take(24) },
@@ -49,7 +55,7 @@ class GozarViewModel(app: Application) : AndroidViewModel(app) {
                     protocol = info?.protocol ?: "",
                     host = info?.host ?: "",
                     port = info?.port ?: 0,
-                    security = info?.sni?.let { "tls" } ?: "",
+                    security = info?.security ?: "",
                 )
                 val list = profiles.value + p
                 store.saveProfiles(list)
@@ -71,7 +77,7 @@ class GozarViewModel(app: Application) : AndroidViewModel(app) {
             for (c in candidates) {
                 val desc = withContext(Dispatchers.IO) { runCatching { GoBridge.validateLink(c) }.getOrNull() }
                     ?: continue
-                val info = withContext(Dispatchers.IO) { runCatching { GoBridge.serverInfo(c) }.getOrNull() }
+                val info = withContext(Dispatchers.IO) { runCatching { GoBridge.profileInfo(c) }.getOrNull() }
                 newOnes += Profile(
                     id = UUID.randomUUID().toString(),
                     remark = desc.substringBefore(" ·").ifBlank { c.take(24) },

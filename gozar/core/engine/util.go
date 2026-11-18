@@ -19,10 +19,20 @@ func freePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
+// fallbackDNSServers are queried directly when the platform resolver fails.
+// Android has no /etc/resolv.conf, so Go's pure resolver would otherwise fall
+// back to 127.0.0.1:53 / [::1]:53 and fail ("lookup host on [::1]:53: ...").
+var fallbackDNSServers = []string{"1.1.1.1", "8.8.8.8", "9.9.9.9", "208.67.222.222", "1.0.0.1", "8.8.4.4"}
+
 // resolveIPv4 resolves host to a single IPv4 address. If host is already an
-// IPv4 literal it is returned as-is. protect (if set) is applied to the
-// resolver's UDP socket so DNS does not loop through the VPN.
-func resolveIPv4(ctx context.Context, host string, protect func(fd uintptr)) (string, error) {
+// IPv4 literal it is returned as-is.
+//
+// Order: (1) the platform resolver (cgo getaddrinfo on Android → netd, which
+// uses the phone's real network DNS); (2) explicit public DNS servers, over UDP
+// then TCP, with every socket passed through protect (VpnService.protect) so the
+// query never loops into our own TUN. extraDNS (e.g. the user's DNS setting) is
+// tried first in step 2.
+func resolveIPv4(ctx context.Context, host string, protect func(fd uintptr), extraDNS ...string) (string, error) {
 	host = strings.Trim(host, "[]")
 	if ip := net.ParseIP(host); ip != nil {
 		if v4 := ip.To4(); v4 != nil {
@@ -30,28 +40,65 @@ func resolveIPv4(ctx context.Context, host string, protect func(fd uintptr)) (st
 		}
 		return "", fmt.Errorf("only IPv4 upstreams are supported, got %q", host)
 	}
-	r := &net.Resolver{}
-	if protect != nil {
-		r.PreferGo = true
-		r.Dial = func(ctx context.Context, network, address string) (net.Conn, error) {
-			d := net.Dialer{Control: func(_, _ string, c syscall.RawConn) error {
-				return c.Control(func(fd uintptr) { protect(fd) })
-			}}
-			return d.DialContext(ctx, network, address)
+
+	var errs []string
+
+	// (1) Platform resolver.
+	{
+		cctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+		ips, err := net.DefaultResolver.LookupIP(cctx, "ip4", host)
+		cancel()
+		if ip := firstV4(ips); err == nil && ip != "" {
+			return ip, nil
+		}
+		if err != nil {
+			errs = append(errs, "system: "+err.Error())
 		}
 	}
-	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	ips, err := r.LookupIP(cctx, "ip4", host)
-	if err != nil {
-		return "", err
+
+	// (2) Explicit servers, ignoring whatever address Go derived from resolv.conf.
+	servers := append([]string{}, extraDNS...)
+	servers = append(servers, fallbackDNSServers...)
+	seen := map[string]bool{}
+	for _, srv := range servers {
+		srv = strings.TrimSpace(srv)
+		if srv == "" || seen[srv] || net.ParseIP(srv) == nil {
+			continue
+		}
+		seen[srv] = true
+		target := net.JoinHostPort(srv, "53")
+		r := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				d := net.Dialer{Timeout: 3 * time.Second}
+				if protect != nil {
+					d.Control = func(_, _ string, c syscall.RawConn) error {
+						return c.Control(func(fd uintptr) { protect(fd) })
+					}
+				}
+				return d.DialContext(ctx, network, target)
+			},
+		}
+		cctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		ips, err := r.LookupIP(cctx, "ip4", host)
+		cancel()
+		if ip := firstV4(ips); err == nil && ip != "" {
+			return ip, nil
+		}
+		if err != nil {
+			errs = append(errs, srv+": "+err.Error())
+		}
 	}
+	return "", fmt.Errorf("could not resolve %q (%s)", host, strings.Join(errs, "; "))
+}
+
+func firstV4(ips []net.IP) string {
 	for _, ip := range ips {
 		if v4 := ip.To4(); v4 != nil {
-			return v4.String(), nil
+			return v4.String()
 		}
 	}
-	return "", fmt.Errorf("no IPv4 address for %q", host)
+	return ""
 }
 
 // deriveFakeSNI picks a decoy SNI. We reuse a benign, widely-allow-listed
