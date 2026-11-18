@@ -93,10 +93,26 @@ func (t *Tunnel) handleUDP(r *gudp.ForwarderRequest) bool {
 	}
 	local := gonet.NewUDPConn(&wq, gep)
 
-	// UDP association over SOCKS5. golang.org/x/net/proxy has no UDP associate,
-	// so we open a direct protected UDP socket to the destination; Xray's
-	// routing handles DNS/QUIC inside the tunnel for TCP, and this gives UDP
-	// apps (QUIC, DNS) a working path when the VPN is the default route.
+	// DNS (:53) is redirected to Xray's FakeDNS inbound over loopback so name
+	// resolution happens through the tunnel (critical on a censored network
+	// where the real resolver is poisoned). Loopback needs no VPN protection.
+	if id.LocalPort == 53 && t.dnsPort > 0 {
+		raddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("127.0.0.1:%d", t.dnsPort))
+		if err != nil {
+			local.Close()
+			return true
+		}
+		upstream, err := net.DialUDP("udp4", nil, raddr)
+		if err != nil {
+			local.Close()
+			return true
+		}
+		go relayUDP(local, upstream)
+		return true
+	}
+
+	// Other UDP (QUIC, etc.): a direct protected socket to the destination so
+	// UDP apps keep working when the VPN is the default route.
 	raddr, err := net.ResolveUDPAddr("udp", dst)
 	if err != nil {
 		local.Close()

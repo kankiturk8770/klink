@@ -311,3 +311,14 @@ func ms(v, def int) time.Duration {
 	}
 	return time.Duration(v) * time.Millisecond
 }
+
+// DNSPort is the loopback UDP port where Xray accepts DNS queries (FakeDNS).
+// tun2socks redirects the TUN's UDP:53 traffic here. Returns 0 when not running.
+func (e *Engine) DNSPort() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.state != StateRunning {
+		return 0
+	}
+	return dnsInboundPort
+}

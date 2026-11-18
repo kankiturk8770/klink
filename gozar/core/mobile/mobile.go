@@ -117,7 +117,7 @@ func Start(settingsJSON string, tunFd int, mtu int) (int, error) {
 	eng = e
 
 	if tunFd >= 0 {
-		tn, err := t2s.Start(tunFd, mtu, e.SocksPort(), protectFn, e.Logs)
+		tn, err := t2s.Start(tunFd, mtu, e.SocksPort(), e.DNSPort(), protectFn, e.Logs)
 		if err != nil {
 			e.Stop()
 			eng = nil

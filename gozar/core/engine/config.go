@@ -79,16 +79,21 @@ func DefaultSettings() Settings {
 		LogLevel:       "warning",
 		EnableSniffing: true,
 		Spoof: SpoofSettings{
-			Enabled:          true,
-			UTLS:             "chrome",
-			Mode:             "non-root",
-			FakeRepeat:       1,
-			FakeDelayMS:      2,
-			AckTimeoutMS:     2000,
-			EnableFragment:   true,
-			FragmentDelayMS:  2,
-			SNIChunk:         3,
-			FakeTTL:          4,
+			Enabled:         true,
+			UTLS:            "chrome",
+			Mode:            "non-root",
+			FakeRepeat:      1,
+			FakeDelayMS:     2,
+			AckTimeoutMS:    2000,
+			EnableFragment:  true,
+			FragmentDelayMS: 2,
+			SNIChunk:        3,
+			// FakeTTL defaults OFF: the TTL-limited in-stream fake only works on
+			// a multi-hop censored path and corrupts the handshake if the decoy
+			// reaches the server. Fragmentation + TLS-record split are
+			// reassembly-safe and defeat most SNI DPI on their own. Users can
+			// enable the TTL fake from advanced settings.
+			FakeTTL:          0,
 			FakeHoldMS:       5,
 			TLSRecordSplit:   true,
 			Disorder:         false,
@@ -99,17 +104,30 @@ func DefaultSettings() Settings {
 	}
 }
 
-// buildXrayConfig produces the Xray JSON config as bytes. outboundDialAddr /
-// outboundDialPort is where Xray should dial the active profile (the spoof
-// listener when spoofing is on, else the real server). socksPort is the local
-// SOCKS inbound. tunFd < 0 means no TUN inbound (SOCKS only, used for tests).
+// dnsInboundPort is the loopback UDP port where Xray accepts DNS queries that
+// tun2socks redirects to it. FakeDNS answers them, so no real resolver is hit.
+const dnsInboundPort = 10853
+
+// buildXrayConfig produces the Xray JSON config as bytes. dialHost/dialPort is
+// where Xray dials the active profile (the spoof listener when spoofing is on,
+// else the real server). socksPort is the local SOCKS inbound.
+//
+// DNS uses Xray FakeDNS: the TUN sends UDP:53 to a local dokodemo "dns-in"
+// inbound, routed to the "dns-out" (protocol "dns") outbound, which answers
+// from Xray's DNS. With a fakedns server first, queries get a fake IP from
+// 198.18.0.0/15 immediately (no upstream resolver needed — critical on a
+// censored network). Apps then connect to that fake IP over TCP; sniffing
+// (destOverride "fakedns") maps it back to the real domain, and the proxy
+// outbound sends the domain to the server for remote resolution. This also
+// works over XHTTP, which cannot carry UDP.
 func buildXrayConfig(active *link.Profile, dialHost string, dialPort, socksPort int, s Settings) ([]byte, error) {
 	if active == nil {
 		return nil, fmt.Errorf("no active profile")
 	}
 	outbound := active.Rewrite(dialHost, dialPort, "proxy")
+	upstreamDNS := firstNonEmptyStr(s.DNS, "1.1.1.1")
 
-	dnsServers := []any{firstNonEmptyStr(s.DNS, "1.1.1.1"), "localhost"}
+	sniff := sniffing(s.EnableSniffing)
 
 	inbounds := []any{
 		map[string]any{
@@ -118,25 +136,52 @@ func buildXrayConfig(active *link.Profile, dialHost string, dialPort, socksPort 
 			"port":     socksPort,
 			"protocol": "socks",
 			"settings": map[string]any{"udp": true, "auth": "noauth"},
-			"sniffing": sniffing(s.EnableSniffing),
+			"sniffing": sniff,
+		},
+		// DNS catcher: tun2socks redirects UDP:53 here; dest is the configured
+		// resolver but routing sends it to the "dns" outbound (FakeDNS answers).
+		map[string]any{
+			"tag":      "dns-in",
+			"listen":   "127.0.0.1",
+			"port":     dnsInboundPort,
+			"protocol": "dokodemo-door",
+			"settings": map[string]any{
+				"address": upstreamDNS,
+				"port":    53,
+				"network": "tcp,udp",
+			},
 		},
 	}
 
 	cfg := map[string]any{
-		"log":      map[string]any{"loglevel": firstNonEmptyStr(s.LogLevel, "warning")},
-		"dns":      map[string]any{"servers": dnsServers, "queryStrategy": "UseIPv4"},
+		"log": map[string]any{"loglevel": firstNonEmptyStr(s.LogLevel, "warning")},
+		"fakedns": []any{
+			map[string]any{"ipPool": "198.18.0.0/15", "poolSize": 65535},
+		},
+		"dns": map[string]any{
+			"servers": []any{
+				map[string]any{"address": "fakedns"},
+				upstreamDNS,
+			},
+			"queryStrategy": "UseIPv4",
+		},
 		"inbounds": inbounds,
 		"outbounds": []any{
 			outbound,
 			map[string]any{"tag": "direct", "protocol": "freedom", "settings": map[string]any{"domainStrategy": "UseIPv4"}},
+			map[string]any{"tag": "dns-out", "protocol": "dns"},
 			map[string]any{"tag": "block", "protocol": "blackhole"},
 		},
 		"routing": map[string]any{
 			"domainStrategy": "IPIfNonMatch",
 			"rules": []any{
-				// Keep the spoof listener / local traffic direct so Xray's own
-				// dial to the spoof proxy never loops back through the tunnel.
+				// DNS queries (the dns-in inbound, and any stray :53) -> dns-out.
+				map[string]any{"type": "field", "inboundTag": []any{"dns-in"}, "outboundTag": "dns-out"},
+				map[string]any{"type": "field", "port": 53, "outboundTag": "dns-out"},
+				// Keep loopback direct so Xray's dial to the spoof proxy never loops.
 				map[string]any{"type": "field", "ip": []any{"127.0.0.1/32"}, "outboundTag": "direct"},
+				// Everything else through the proxy.
+				map[string]any{"type": "field", "network": "tcp,udp", "outboundTag": "proxy"},
 			},
 		},
 	}
@@ -147,7 +192,8 @@ func sniffing(on bool) map[string]any {
 	if !on {
 		return map[string]any{"enabled": false}
 	}
-	return map[string]any{"enabled": true, "destOverride": []any{"tls", "http", "quic"}, "routeOnly": false}
+	// fakedns first so fake IPs map back to domains; then tls/http for SNI/Host.
+	return map[string]any{"enabled": true, "destOverride": []any{"fakedns", "tls", "http", "quic"}, "routeOnly": false}
 }
 
 func firstNonEmptyStr(vals ...string) string {
