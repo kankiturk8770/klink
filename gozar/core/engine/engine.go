@@ -111,6 +111,10 @@ func (e *Engine) setState(s State, errMsg string) {
 		e.lastErr = errMsg
 	}
 	e.mu.Unlock()
+	if s == StateError && errMsg != "" {
+		// Every start failure lands in the log the UI shows.
+		e.logs.addf("ERROR: %s", errMsg)
+	}
 }
 
 // Start brings up the tunnel from the given settings and optional protect hook.
@@ -141,14 +145,22 @@ func (e *Engine) Start(s Settings, protect func(fd uintptr)) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Resolve the real server to an IPv4 for the spoof proxy.
-	connectIP, err := resolveIPv4(ctx, active.RealHost, protect)
-	if err != nil {
-		cancel()
-		e.setState(StateError, err.Error())
-		return fmt.Errorf("resolve %s: %w", active.RealHost, err)
+	// Resolve the real server to an IPv4 for the spoof proxy. Prefer the IP the
+	// Android side already resolved through the phone's real network.
+	var connectIP string
+	if ip := net.ParseIP(strings.TrimSpace(s.ServerIP)); ip != nil && ip.To4() != nil {
+		connectIP = ip.To4().String()
+		e.logs.addf("server %s -> %s (resolved by the app via system DNS)", active.RealHost, connectIP)
+	} else {
+		e.logs.addf("resolving %s ...", active.RealHost)
+		connectIP, err = resolveIPv4(ctx, active.RealHost, protect, s.DNS)
+		if err != nil {
+			cancel()
+			e.setState(StateError, fmt.Sprintf("resolve %s: %v", active.RealHost, err))
+			return fmt.Errorf("resolve %s: %w", active.RealHost, err)
+		}
+		e.logs.addf("resolved %s -> %s", active.RealHost, connectIP)
 	}
-	e.logs.addf("resolved %s -> %s", active.RealHost, connectIP)
 
 	// Choose ports.
 	socksPort := s.SocksPort
@@ -161,7 +173,10 @@ func (e *Engine) Start(s Settings, protect func(fd uintptr)) error {
 		}
 	}
 
-	dialHost, dialPort := active.RealHost, active.RealPort
+	// Dial the resolved IP, never the hostname: Xray would otherwise resolve the
+	// server's own name through FakeDNS, get a fake 198.18.x.x address, and loop
+	// back into the tunnel. TLS keeps the real SNI (set in the outbound).
+	dialHost, dialPort := connectIP, active.RealPort
 
 	// Start the spoof proxy (if enabled) and point Xray at it.
 	if s.Spoof.Enabled {
@@ -322,3 +337,6 @@ func (e *Engine) DNSPort() int {
 	}
 	return dnsInboundPort
 }
+
+// Logf appends a line to the engine log (used by the mobile layer).
+func (e *Engine) Logf(format string, args ...any) { e.logs.addf(format, args...) }

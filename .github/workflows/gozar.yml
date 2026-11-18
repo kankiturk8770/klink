@@ -54,6 +54,39 @@ jobs:
           "$SDKM" --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
+      - name: Stable signing key
+        # Android refuses to update an app whose signature changed. Use the
+        # GOZAR_KEYSTORE_BASE64 secret when set; otherwise keep one cached debug
+        # keystore across runs so every release has the same signature.
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.GOZAR_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p ~/.android
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > ~/.android/debug.keystore
+            echo "source=secret" >> "$GITHUB_OUTPUT"
+          else
+            echo "source=cache" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore cached debug keystore
+        if: steps.keystore.outputs.source == 'cache'
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: gozar-debug-keystore-v1
+
+      - name: Create debug keystore if missing
+        if: steps.keystore.outputs.source == 'cache'
+        run: |
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          keytool -list -v -keystore ~/.android/debug.keystore -storepass android | grep -m1 SHA256
+
       - name: Build root helper (all ABIs)
         working-directory: gozar/core
         run: |

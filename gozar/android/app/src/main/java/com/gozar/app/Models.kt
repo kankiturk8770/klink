@@ -91,6 +91,19 @@ data class EngineSettings(
     @SerializedName("EnableSniffing") val enableSniffing: Boolean,
     @SerializedName("DialOverrideHost") val dialOverrideHost: String = "",
     @SerializedName("DialOverridePort") val dialOverridePort: Int = 0,
+    /** Server IPv4 resolved by the app through the phone's real network. */
+    @SerializedName("ServerIP") val serverIp: String = "",
+)
+
+/** Parsed link info — no network access involved. */
+data class ProfileInfo(
+    val remark: String = "",
+    val protocol: String = "",
+    val host: String = "",
+    val port: Int = 0,
+    val sni: String = "",
+    val network: String = "",
+    val security: String = "",
 )
 
 /** Server endpoint info resolved by the Go core (for the root-helper flow). */

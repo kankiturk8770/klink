@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -136,4 +137,36 @@ func parseDNSAnswers(msg []byte) []net.IP {
 		pos += rdlen
 	}
 	return ips
+}
+
+// The app resolves the server via Android's system DNS and passes ServerIP; the
+// engine must then start without doing any DNS itself (the old code failed here
+// on Android with "lookup <host> on [::1]:53").
+func TestServerIPOverrideSkipsResolve(t *testing.T) {
+	uuid := "b831381d-6324-4d53-ad4f-8cda48b30811"
+	link := fmt.Sprintf("vless://%s@unresolvable-host.gozar.invalid:8443?encryption=none&security=tls&sni=unresolvable-host.gozar.invalid&type=xhttp&path=%%2Fx#t", uuid)
+	e := New()
+	s := DefaultSettings()
+	s.Links = []string{link}
+	s.ServerIP = "198.51.100.7"
+	if err := e.Start(s, nil); err != nil {
+		t.Fatalf("start with ServerIP failed: %v\n%s", err, e.Logs())
+	}
+	defer e.Stop()
+	if !strings.Contains(e.Logs(), "198.51.100.7") {
+		t.Fatalf("expected ServerIP in log:\n%s", e.Logs())
+	}
+}
+
+// A start failure must leave an ERROR line in the log the UI shows.
+func TestStartFailureIsLogged(t *testing.T) {
+	e := New()
+	s := DefaultSettings()
+	s.Links = []string{"vless://not-a-valid-link"}
+	if err := e.Start(s, nil); err == nil {
+		t.Fatal("expected failure")
+	}
+	if !strings.Contains(e.Logs(), "ERROR") {
+		t.Fatalf("failure not logged:\n%s", e.Logs())
+	}
 }

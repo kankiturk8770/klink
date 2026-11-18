@@ -9,12 +9,69 @@ package mobile
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	"gozar/core/engine"
 	"gozar/core/link"
 	t2s "gozar/core/tun"
 )
+
+// appLog keeps app-side lines and the last engine run's log, so the Logs tab is
+// never empty after a failed start (the failed engine used to be discarded with
+// its whole buffer).
+var (
+	appLogMu sync.Mutex
+	appLog   []string
+)
+
+const appLogMax = 600
+
+func addAppLog(line string) {
+	appLogMu.Lock()
+	defer appLogMu.Unlock()
+	appLog = append(appLog, time.Now().Format("15:04:05")+" "+line)
+	if len(appLog) > appLogMax {
+		appLog = appLog[len(appLog)-appLogMax:]
+	}
+}
+
+// keepEngineLog copies a finished/failed engine's buffer into appLog.
+func keepEngineLog(text string) {
+	if text == "" {
+		return
+	}
+	appLogMu.Lock()
+	defer appLogMu.Unlock()
+	for _, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		if l != "" {
+			appLog = append(appLog, l)
+		}
+	}
+	if len(appLog) > appLogMax {
+		appLog = appLog[len(appLog)-appLogMax:]
+	}
+}
+
+func appLogText() string {
+	appLogMu.Lock()
+	defer appLogMu.Unlock()
+	if len(appLog) == 0 {
+		return ""
+	}
+	return strings.Join(appLog, "\n") + "\n"
+}
+
+// AppendLog lets the Android side write into the same log the UI shows.
+func AppendLog(line string) { addAppLog(line) }
+
+// ClearLogs empties the app log.
+func ClearLogs() {
+	appLogMu.Lock()
+	appLog = nil
+	appLogMu.Unlock()
+}
 
 var (
 	mu      sync.Mutex
@@ -112,6 +169,8 @@ func Start(settingsJSON string, tunFd int, mtu int) (int, error) {
 		protectFn = func(fd uintptr) { p.Protect(int(fd)) }
 	}
 	if err := e.Start(s, protectFn); err != nil {
+		keepEngineLog(e.Logs())
+		addAppLog("start failed: " + err.Error())
 		return 0, err
 	}
 	eng = e
@@ -120,10 +179,13 @@ func Start(settingsJSON string, tunFd int, mtu int) (int, error) {
 		tn, err := t2s.Start(tunFd, mtu, e.SocksPort(), e.DNSPort(), protectFn, e.Logs)
 		if err != nil {
 			e.Stop()
+			keepEngineLog(e.Logs())
+			addAppLog("ERROR: tun2socks: " + err.Error())
 			eng = nil
 			return 0, fmt.Errorf("tun2socks: %w", err)
 		}
 		tun = tn
+		e.Logf("tun2socks: TUN fd attached (mtu %d), DNS -> FakeDNS 127.0.0.1:%d", mtu, e.DNSPort())
 	}
 	return e.SocksPort(), nil
 }
@@ -138,6 +200,7 @@ func Stop() {
 	}
 	if eng != nil {
 		eng.Stop()
+		keepEngineLog(eng.Logs())
 		eng = nil
 	}
 }
@@ -175,15 +238,31 @@ func StatsJSON() string {
 	return string(b)
 }
 
-// Logs returns the buffered log text.
+// Logs returns the app log (previous runs, app-side lines, failures) followed by
+// the running engine's live log.
 func Logs() string {
 	mu.Lock()
 	e := eng
 	mu.Unlock()
-	if e == nil {
-		return ""
+	out := appLogText()
+	if e != nil {
+		out += e.Logs()
 	}
-	return e.Logs()
+	return out
+}
+
+// ProfileInfoJSON parses a link WITHOUT any network access and returns
+// {"remark","protocol","host","port","sni","network","security"}.
+func ProfileInfoJSON(rawLink string) (string, error) {
+	p, err := link.Parse(rawLink)
+	if err != nil {
+		return "", err
+	}
+	b, _ := json.Marshal(map[string]any{
+		"remark": p.Remark, "protocol": p.Protocol, "host": p.RealHost, "port": p.RealPort,
+		"sni": p.SNI, "network": p.Network, "security": p.Security,
+	})
+	return string(b), nil
 }
 
 // URLTest measures latency through the tunnel in milliseconds.

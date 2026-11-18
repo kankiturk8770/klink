@@ -408,6 +408,9 @@ private fun LogsScreen(vm: GozarViewModel) {
             IconButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(logs)) }) {
                 Icon(Icons.Filled.ContentCopy, null, tint = Accent)
             }
+            IconButton(onClick = { vm.clearLogs() }) {
+                Icon(Icons.Filled.DeleteSweep, null, tint = TextLo)
+            }
         }
         Spacer(Modifier.height(8.dp))
         Surface(color = Color(0xFF070B16), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxSize()) {
