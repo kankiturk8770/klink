@@ -32,6 +32,7 @@ type Tunnel struct {
 	fd      int
 	logf    func() string
 	socks   string
+	dnsPort int
 	protect func(fd uintptr)
 
 	mu     sync.Mutex
@@ -39,9 +40,10 @@ type Tunnel struct {
 }
 
 // Start builds the stack on a dup of tunFd and starts forwarding to
-// 127.0.0.1:socksPort. logs is an optional source of the engine log buffer
-// (used only to keep the signature uniform); it is not required.
-func Start(tunFd, mtu, socksPort int, protect func(fd uintptr), logs func() string) (*Tunnel, error) {
+// 127.0.0.1:socksPort. dnsPort, when > 0, is a loopback UDP port (Xray's
+// FakeDNS inbound) that all UDP:53 traffic is redirected to so DNS resolves
+// through the tunnel; 0 falls back to a direct protected UDP socket.
+func Start(tunFd, mtu, socksPort, dnsPort int, protect func(fd uintptr), logs func() string) (*Tunnel, error) {
 	if socksPort <= 0 {
 		return nil, fmt.Errorf("invalid socks port %d", socksPort)
 	}
@@ -97,6 +99,7 @@ func Start(tunFd, mtu, socksPort int, protect func(fd uintptr), logs func() stri
 		fd:      dup,
 		logf:    logs,
 		socks:   fmt.Sprintf("127.0.0.1:%d", socksPort),
+		dnsPort: dnsPort,
 		protect: protect,
 	}
 

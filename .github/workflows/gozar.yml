@@ -69,6 +69,12 @@ jobs:
 
       - name: Build gomobile AAR
         working-directory: gozar/android
+        # setup-go installs the go.mod version as the base toolchain, so
+        # GOTOOLCHAIN=local avoids a toolchain download; GOSUMDB=off avoids
+        # flaky sum.golang.org lookups during gomobile's internal `go mod tidy`.
+        env:
+          GOSUMDB: off
+          GOTOOLCHAIN: local
         run: bash build-go.sh
 
       - name: Build APK
