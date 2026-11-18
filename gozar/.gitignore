@@ -1,0 +1,11 @@
+# Generated / large build artifacts (CI rebuilds these)
+android/app/libs/*.aar
+android/app/libs/*.jar
+android/app/src/main/jniLibs/
+android/.gomobile/
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+core/internal/gomobiletools/.keep
+*.apk

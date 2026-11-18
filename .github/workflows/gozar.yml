@@ -1,0 +1,96 @@
+name: Gozar
+
+# Builds the Gozar Go core (tests), the root helper for every ABI, the gomobile
+# AAR and the Android APK. Pushing a tag like gozar-v* also publishes a release.
+on:
+  push:
+    branches: [main]
+    paths: ['gozar/**', '.github/workflows/gozar.yml']
+    tags: ['gozar-v*']
+  pull_request:
+    paths: ['gozar/**', '.github/workflows/gozar.yml']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (e.g. gozar-v0.1.0)
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  core-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gozar/core/go.mod
+          cache-dependency-path: gozar/core/go.sum
+      - name: Vet and test the Go core
+        working-directory: gozar/core
+        run: |
+          go vet ./...
+          go test ./...
+
+  android:
+    needs: core-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gozar/core/go.mod
+          cache-dependency-path: gozar/core/go.sum
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK packages
+        run: |
+          SDKM="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -n1)"
+          yes | "$SDKM" --licenses >/dev/null || true
+          "$SDKM" --install "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Build root helper (all ABIs)
+        working-directory: gozar/core
+        run: |
+          NDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          JNI="$GITHUB_WORKSPACE/gozar/android/app/src/main/jniLibs"
+          mkdir -p "$JNI/arm64-v8a" "$JNI/armeabi-v7a" "$JNI/x86_64"
+          env CGO_ENABLED=1 GOOS=android GOARCH=arm64 CC="$NDK/aarch64-linux-android24-clang" \
+            go build -buildmode=pie -trimpath -ldflags="-s -w" -o "$JNI/arm64-v8a/libgozarhelper.so" ./cmd/gozar-helper
+          env CGO_ENABLED=1 GOOS=android GOARCH=arm GOARM=7 CC="$NDK/armv7a-linux-androideabi24-clang" \
+            go build -buildmode=pie -trimpath -ldflags="-s -w" -o "$JNI/armeabi-v7a/libgozarhelper.so" ./cmd/gozar-helper
+          env CGO_ENABLED=1 GOOS=android GOARCH=amd64 CC="$NDK/x86_64-linux-android24-clang" \
+            go build -buildmode=pie -trimpath -ldflags="-s -w" -o "$JNI/x86_64/libgozarhelper.so" ./cmd/gozar-helper
+
+      - name: Build gomobile AAR
+        working-directory: gozar/android
+        run: bash build-go.sh
+
+      - name: Build APK
+        working-directory: gozar/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/Gozar-android.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gozar-android
+          path: Gozar-android.apk
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/gozar-v') || github.event.inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Gozar ${{ github.event.inputs.tag || github.ref_name }}
+          files: Gozar-android.apk
+          body: |
+            Gozar — Android DPI bypass (SNI spoofing) with embedded Xray.
+            Install `Gozar-android.apk`, add a config (paste / QR / subscription), and connect.
+            Root modes are experimental and require a working `su`.
