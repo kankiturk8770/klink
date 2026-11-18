@@ -28,3 +28,15 @@ This is an independent app from KLINK; it shares the repository only.
 
 The Go core under `core/` is forked from SNI-Spoofing-Go (GPL-3.0); see
 `core/LICENSE.sni-spoofing-go`.
+
+## Known limitations (v0.1)
+
+- **TCP is fully tunnelled** through Xray (so HTTPS / DoH browsing is covered and
+  the proxy connection itself gets the SNI-spoofing treatment). **UDP and plain
+  DNS (:53)** currently egress via a VPN-protected direct socket rather than
+  through Xray, so UDP apps keep working but DNS is not tunnelled; prefer DoH/DoT
+  or a DNS the censor does not poison. Routing UDP through Xray's SOCKS UDP
+  associate is planned.
+- **Root mode is experimental.** The helper and its `su` wiring are implemented
+  and build for every ABI, but on-device root was not validated on real hardware.
+  Non-root mode is the tested default.

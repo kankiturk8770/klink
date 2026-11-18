@@ -20,6 +20,13 @@ fi
 GO_BIN="${GO_BIN:-$(command -v go || true)}"
 [[ -n "$GO_BIN" ]] || { echo "Go 1.26+ is required." >&2; exit 1; }
 
+# gomobile runs `go mod tidy` in a temp module; gVisor's large indirect graph
+# otherwise forces checksum-DB lookups to sum.golang.org that flake on CI
+# (stream INTERNAL_ERROR). Our committed go.sum already pins everything, so turn
+# off the sum DB and allow module graph updates in the temp module.
+export GOSUMDB=off
+export GOFLAGS="${GOFLAGS:-} -mod=mod"
+
 TOOLS_BIN="$ROOT/.gomobile/bin"
 mkdir -p "$TOOLS_BIN" "$ROOT/app/libs"
 export PATH="$TOOLS_BIN:$PATH"
